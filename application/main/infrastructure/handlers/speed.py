@@ -18,9 +18,6 @@ def cal_route(old, M):
 
 
 def cal_perspective_params(img, points):
-    offset_x = 330
-    offset_y = 0
-    img_size = (img.shape[1], img.shape[0])
     src = np.float32(points)
     # 俯视图中四点的位置
     dst = np.float32([[359, 400], [461, 400], [359, 542], [461, 542]])

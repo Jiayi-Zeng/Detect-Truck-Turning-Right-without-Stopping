@@ -21,7 +21,7 @@ visualize: false
 
 #in-out
 fourcc: mp4v
-source: ../../videos/sample2.mp4
+source: ../../videos/sample3.mp4
 output: inference/output
 save_csv: true
 save_txt: true

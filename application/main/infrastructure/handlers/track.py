@@ -38,6 +38,7 @@ from infrastructure.database.common import add_vehicle_to_db
 from threading import Thread
 from datetime import timedelta, datetime
 import math
+
 # environment variable
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -262,16 +263,32 @@ class Tracker:
                             # add route
                             bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes
                             center = (bbox_left + bbox_right) // 2, (bbox_top + bbox_bottom) // 2
-                            center = (bbox_left + bbox_right) // 2, (bbox_top + bbox_bottom) // 2
                             vehicle_infos[id]['route'][datetime.now()] = center
+
+                            M, M_inverse = cal_perspective_params()
+                            vehicle_infos[id]['new_route'] = cal_route(vehicle_infos[id]['route'], M)
 
                             # print route
                             if current_frame["frame"] > 2:
                                 for index, value in vehicle_infos.items():
                                     if datetime.now() < value['exit_time']:
                                         route = value["route"]
+                                        new_route = value["new_route"]
+
+                                        # draw
                                         last = []
                                         for now in route.items():
+                                            if not last == []:
+                                                now_time, now_point = now[0], now[1]
+                                                last_time, last_point = last[0], last[1]
+                                                # draw
+                                                cv2.line(im0, now_point, last_point, (255, 0, 0), thickness=2,
+                                                         lineType=8)
+                                            last = now
+
+                                        # speed
+                                        last = []
+                                        for now in new_route.items():
                                             if not last == []:
                                                 now_time, now_point = now[0], now[1]
                                                 last_time, last_point = last[0], last[1]
@@ -282,9 +299,6 @@ class Tracker:
                                                 dis = math.sqrt(del_x ** 2 + del_y ** 2)
                                                 speed = 3.5 * dis / 160 / del_time.total_seconds() * 3.6
                                                 label += f'{speed}km/h'
-                                                # draw
-                                                cv2.line(im0, now_point, last_point, (255, 0, 0), thickness=2,
-                                                         lineType=8)
                                             last = now
 
                             # print box
@@ -334,6 +348,29 @@ class Tracker:
             print('Results saved to %s' % os.getcwd() + os.sep + out)
             if platform == 'darwin':  # MacOS
                 os.system('open ' + save_path)
+
+
+def cal_route(old, M):
+    new_route = {}
+    for time, point in old.items():
+        Z = M[2, 0] * point[0] + M[2, 1] * point[1] + M[2, 2]
+        tempX = (M[0, 0] * point[0] + M[0, 1] * point[1] + M[0, 2]) // Z
+        tempY = (M[1, 0] * point[0] + M[1, 1] * point[1] + M[1, 2]) // Z
+        new_point = [int(tempX), int(tempY)]
+        new_route[time] = new_point
+    return new_route
+
+
+def cal_perspective_params():
+    points = [[359, 307], [461, 306], [312, 542], [497, 542]]
+    src = np.float32(points)
+    # 俯视图中四点的位置
+    dst = np.float32([[359, 400], [461, 400], [359, 542], [461, 542]])
+    # 从原始图像转换为俯视图的透视变换的参数矩阵
+    M = cv2.getPerspectiveTransform(src, dst)
+    # 从俯视图转换为原始图像的透视变换参数矩阵
+    M_inverse = cv2.getPerspectiveTransform(dst, src)
+    return M, M_inverse
 
 
 if __name__ == '__main__':
