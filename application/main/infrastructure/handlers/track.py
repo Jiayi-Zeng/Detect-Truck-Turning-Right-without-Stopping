@@ -303,7 +303,10 @@ class Tracker:
                                                 del_y = now_point[1] - last_point[1]
                                                 dis = math.sqrt(del_x ** 2 + del_y ** 2)
                                                 speed = (3.5 * dis / 160) / (del_time * 0.001) * 3.6
-                                                label += f'{speed}km/h'
+                                                if index == 1:
+                                                    print(now_time, speed)
+                                                speed = int(speed)
+                                                label = f'{names[c]}- id {id} {speed}km/h'
                                             last = now
 
                             # print box
