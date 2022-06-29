@@ -10,6 +10,9 @@ import copy
 import numpy as np
 import time
 # import dlib
+import os
+import subprocess
+
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -99,7 +102,7 @@ class Tracker:
         if pt:
             model.model.half() if half else model.model.float()
 
-        # display
+        # display or not
         if show_vid:
             show_vid = check_imshow()
 
@@ -112,6 +115,7 @@ class Tracker:
         else:
             dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt and not jit)
             bs = 1  # batch_size
+            total_time = get_video_duration(source)
         vid_path, vid_writer = [None] * bs, [None] * bs
 
         # Get names and colors
@@ -182,11 +186,6 @@ class Tracker:
                     det[:, :4] = scale_coords(
                         img.shape[2:], det[:, :4], im0.shape).round()
 
-                    # Print results
-                    # for c in det[:, -1].unique():
-                    #     n = (det[:, -1] == c).sum()  # detections per class
-                    #     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
-
                     xywhs = xyxy2xywh(det[:, 0:4])
                     confs = det[:, 4]
                     clss = det[:, 5]
@@ -196,6 +195,7 @@ class Tracker:
                     confs = np.asarray(confs.cpu())
                     clss = np.asarray(clss.cpu())
 
+                    # Exclude area of unused targets
                     row_indexes_delete = []
                     for index, cord in enumerate(xywhs):
                         if not (cord[1] > upper_line and cord[0] > right_line):
@@ -204,13 +204,13 @@ class Tracker:
                     confs = np.delete(confs, row_indexes_delete)
                     clss = np.delete(clss, row_indexes_delete)
 
+                    # deepsort
                     xywhs = torch.tensor(xywhs)
                     confs = torch.tensor(confs)
                     clss = torch.tensor(clss)
-
                     outputs = deepsort.update(xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
 
-                    current_frame = {'time': datetime.now(),
+                    current_frame = {'time': total_time * frame/dataset.frames,
                                      'frame': frame_idx,
                                      'n_vehicles_at_time': len(outputs),
                                      'IDs_vehicles': []}
@@ -226,11 +226,12 @@ class Tracker:
                             #  for ID not in previous_IDs:
                             if (ID not in previous_IDs) and (ID not in list_vehicles):
                                 vehicle_infos[ID] = {}
-                                vehicle_infos[ID]['in_time'] = datetime.now()
-                                vehicle_infos[ID]['exit_time'] = datetime.max
+                                vehicle_infos[ID]['in_time'] = current_frame['time']
+                                vehicle_infos[ID]['exit_time'] = float('inf')
                                 vehicle_infos[ID]['type_vehicle'] = 'vehicle'
                                 vehicle_infos[ID]['temporarily_disappear'] = 0
                                 vehicle_infos[ID]['route'] = {}
+                                vehicle_infos[ID]['new_route'] = {}
 
                         # for ID in previous_IDs:
                         for ID in copy.deepcopy(list_vehicles):
@@ -238,8 +239,8 @@ class Tracker:
                                 vehicle_infos[ID]['temporarily_disappear'] += 1
                                 # 25 frame ~ 1 seconds
                                 if (vehicle_infos[ID]['temporarily_disappear'] > 200) and \
-                                        (datetime.now() - vehicle_infos[ID]['in_time']) > timedelta(seconds=3):
-                                    vehicle_infos[ID]['exit_time'] = datetime.now()
+                                        (current_frame - vehicle_infos[ID]['in_time']) > timedelta(seconds=3):
+                                    vehicle_infos[ID]['exit_time'] = current_frame
                                     str_ID = str(ID) + "-" + str(time.time()).replace(".", "")
                                     if opt.upload_db:
                                         this_vehicle = Vehicle(str_ID, vehicle_infos[ID]['in_time'],
@@ -263,15 +264,19 @@ class Tracker:
                             # add route
                             bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes
                             center = (bbox_left + bbox_right) // 2, (bbox_top + bbox_bottom) // 2
-                            vehicle_infos[id]['route'][datetime.now()] = center
+                            vehicle_infos[id]['route'][current_frame['time']] = center
 
                             M, M_inverse = cal_perspective_params()
-                            vehicle_infos[id]['new_route'] = cal_route(vehicle_infos[id]['route'], M)
+                            Z = M[2, 0] * center[0] + M[2, 1] * center[1] + M[2, 2]
+                            tempX = (M[0, 0] * center[0] + M[0, 1] * center[1] + M[0, 2]) // Z
+                            tempY = (M[1, 0] * center[0] + M[1, 1] * center[1] + M[1, 2]) // Z
+                            new_point = [int(tempX), int(tempY)]
+                            vehicle_infos[id]['new_route'][current_frame['time']] = new_point
 
                             # print route
                             if current_frame["frame"] > 2:
                                 for index, value in vehicle_infos.items():
-                                    if datetime.now() < value['exit_time']:
+                                    if current_frame['time'] < value['exit_time']:
                                         route = value["route"]
                                         new_route = value["new_route"]
 
@@ -297,7 +302,7 @@ class Tracker:
                                                 del_x = now_point[0] - last_point[0]
                                                 del_y = now_point[1] - last_point[1]
                                                 dis = math.sqrt(del_x ** 2 + del_y ** 2)
-                                                speed = 3.5 * dis / 160 / del_time.total_seconds() * 3.6
+                                                speed = (3.5 * dis / 160) / (del_time * 0.001) * 3.6
                                                 label += f'{speed}km/h'
                                             last = now
 
@@ -350,17 +355,6 @@ class Tracker:
                 os.system('open ' + save_path)
 
 
-def cal_route(old, M):
-    new_route = {}
-    for time, point in old.items():
-        Z = M[2, 0] * point[0] + M[2, 1] * point[1] + M[2, 2]
-        tempX = (M[0, 0] * point[0] + M[0, 1] * point[1] + M[0, 2]) // Z
-        tempY = (M[1, 0] * point[0] + M[1, 1] * point[1] + M[1, 2]) // Z
-        new_point = [int(tempX), int(tempY)]
-        new_route[time] = new_point
-    return new_route
-
-
 def cal_perspective_params():
     points = [[359, 307], [461, 306], [312, 542], [497, 542]]
     src = np.float32(points)
@@ -372,6 +366,20 @@ def cal_perspective_params():
     M_inverse = cv2.getPerspectiveTransform(dst, src)
     return M, M_inverse
 
+
+def get_video_duration(video_path: str):
+    ext = os.path.splitext(video_path)[-1]
+    if ext != '.mp4' and ext != '.avi' and ext != '.flv':
+        raise Exception('format not support')
+    ffprobe_cmd = 'ffprobe -i {} -show_entries format=duration -v quiet -of csv="p=0"'
+    p = subprocess.Popen(
+        ffprobe_cmd.format(video_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True)
+    out, err = p.communicate()
+    duration_info = float(str(out, 'utf-8').strip())
+    return int(duration_info * 1000)
 
 if __name__ == '__main__':
     tracker = Tracker(config_path='../settings/config.yml')
