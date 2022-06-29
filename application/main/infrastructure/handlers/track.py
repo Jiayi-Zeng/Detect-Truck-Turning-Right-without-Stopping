@@ -62,9 +62,9 @@ class Tracker:
         # Initialize
         opt = self.opt
         out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, save_csv, imgsz, evaluate, half, \
-            upper_ratio, right_ratio, = opt.output, opt.source, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, \
-                                        opt.save_vid, opt.save_txt, opt.save_csv, opt.imgsz, opt.evaluate, opt.half, \
-                                        opt.upper_ratio, opt.right_ratio
+        upper_ratio, right_ratio, = opt.output, opt.source, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, \
+                                    opt.save_vid, opt.save_txt, opt.save_csv, opt.imgsz, opt.evaluate, opt.half, \
+                                    opt.upper_ratio, opt.right_ratio
         zone_drawer = ZoneDrawerHelper()
         webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
         device = select_device(opt.device)
@@ -273,9 +273,12 @@ class Tracker:
                                 for key, value in vehicle_infos.items():
                                     if datetime.now() < value['exit_time']:
                                         route = value["route"]
-                                        for index in range(len(route) - 1):
-                                            cv2.line(im0, route[index].value, route[index + 1].value, color=colors(c, True),
-                                                     thickness=2, lineType=8)
+                                        last_point = []
+                                        for point in route.values():
+                                            if not last_point == []:
+                                                cv2.line(im0, point, last_point, color=colors(c, True), thickness=2,
+                                                         lineType=8)
+                                                last_point = point
 
                         vehicles_count = current_frame['n_vehicles_at_time']
                         IDs_vehicles = current_frame['IDs_vehicles']
