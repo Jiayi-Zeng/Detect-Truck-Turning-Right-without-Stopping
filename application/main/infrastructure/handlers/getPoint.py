@@ -20,7 +20,7 @@ def get_point(event, x, y, flags, param):
 
 if __name__ == "__main__":
     # 定义两幅图像
-    image = cv2.imread("E:\\repos\\Vehicle-tracking\\videos\\sample_Moment.jpg")
+    image = cv2.imread("E:/repos/Vehicle-tracking/application/main/inference/output/img.jpg")
     # image = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
 
     # 定义两个窗口 并绑定事件 传入各自对应的参数

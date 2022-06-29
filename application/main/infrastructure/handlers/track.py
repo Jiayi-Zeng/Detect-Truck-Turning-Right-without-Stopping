@@ -37,7 +37,7 @@ from infrastructure.database.common import add_vehicle_to_db
 
 from threading import Thread
 from datetime import timedelta, datetime
-
+import math
 # environment variable
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -265,20 +265,30 @@ class Tracker:
                             center = (bbox_left + bbox_right) // 2, (bbox_top + bbox_bottom) // 2
                             vehicle_infos[id]['route'][datetime.now()] = center
 
-                            # print box
-                            annotator.box_label(bboxes, label, color=colors(c, True))
-
                             # print route
                             if current_frame["frame"] > 2:
-                                for key, value in vehicle_infos.items():
+                                for index, value in vehicle_infos.items():
                                     if datetime.now() < value['exit_time']:
                                         route = value["route"]
-                                        last_point = []
-                                        for point in route.values():
-                                            if not last_point == []:
-                                                cv2.line(im0, point, last_point, color=colors(c, True), thickness=2,
+                                        last = []
+                                        for now in route.items():
+                                            if not last == []:
+                                                now_time, now_point = now[0], now[1]
+                                                last_time, last_point = last[0], last[1]
+                                                # cal speed
+                                                del_time = now_time - last_time
+                                                del_x = now_point[0] - last_point[0]
+                                                del_y = now_point[1] - last_point[1]
+                                                dis = math.sqrt(del_x ** 2 + del_y ** 2)
+                                                speed = 3.5 * dis / 160 / del_time.total_seconds() * 3.6
+                                                label += f'{speed}km/h'
+                                                # draw
+                                                cv2.line(im0, now_point, last_point, (255, 0, 0), thickness=2,
                                                          lineType=8)
-                                                last_point = point
+                                            last = now
+
+                            # print box
+                            annotator.box_label(bboxes, label, color=colors(c, True))
 
                         vehicles_count = current_frame['n_vehicles_at_time']
                         IDs_vehicles = current_frame['IDs_vehicles']
