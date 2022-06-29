@@ -229,7 +229,7 @@ class Tracker:
                                 vehicle_infos[ID]['exit_time'] = datetime.max
                                 vehicle_infos[ID]['type_vehicle'] = 'vehicle'
                                 vehicle_infos[ID]['temporarily_disappear'] = 0
-                                vehicle_infos[ID]['route'] = []
+                                vehicle_infos[ID]['route'] = {}
 
                         # for ID in previous_IDs:
                         for ID in copy.deepcopy(list_vehicles):
@@ -263,7 +263,7 @@ class Tracker:
                             bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes
                             center = (bbox_left + bbox_right) // 2, (bbox_top + bbox_bottom) // 2
                             center = (bbox_left + bbox_right) // 2, (bbox_top + bbox_bottom) // 2
-                            vehicle_infos[id]['route'].append(center)
+                            vehicle_infos[id]['route'][datetime.now()] = center
 
                             # print box
                             annotator.box_label(bboxes, label, color=colors(c, True))
@@ -274,7 +274,7 @@ class Tracker:
                                     if datetime.now() < value['exit_time']:
                                         route = value["route"]
                                         for index in range(len(route) - 1):
-                                            cv2.line(im0, route[index], route[index + 1], color=colors(c, True),
+                                            cv2.line(im0, route[index].value, route[index + 1].value, color=colors(c, True),
                                                      thickness=2, lineType=8)
 
                         vehicles_count = current_frame['n_vehicles_at_time']
