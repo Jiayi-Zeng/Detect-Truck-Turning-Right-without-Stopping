@@ -73,6 +73,7 @@ class Tracker:
         webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
         device = select_device(opt.device)
         half &= device.type != 'cpu'  # half precision only on CUDA
+        M, M_inverse = cal_perspective_params()
 
         # Initialize deepsort
         cfg = get_config()
@@ -172,7 +173,6 @@ class Tracker:
                 else:
                     p, im0, frame = path, im0s.copy(), getattr(dataset, 'frame', 0)
 
-                # s += '%gx%g ' % img.shape[2:]  # print string
                 save_path = str(Path(out) / Path(p).name)
 
                 annotator = Annotator(im0, line_width=2, pil=not ascii)
@@ -222,6 +222,7 @@ class Tracker:
                         previous_IDs = previous_frame['IDs_vehicles']
                         current_IDs = current_frame['IDs_vehicles']
 
+                        # for ID in current_IDs:
                         for ID in current_IDs:
                             #  for ID not in previous_IDs:
                             if (ID not in previous_IDs) and (ID not in list_vehicles):
@@ -232,9 +233,11 @@ class Tracker:
                                 vehicle_infos[ID]['temporarily_disappear'] = 0
                                 vehicle_infos[ID]['route'] = {}
                                 vehicle_infos[ID]['new_route'] = {}
+                                vehicle_infos[ID]['speed'] = {}
 
                         # for ID in previous_IDs:
                         for ID in copy.deepcopy(list_vehicles):
+                            # for ID not in current_IDs:
                             if ID not in current_IDs:
                                 vehicle_infos[ID]['temporarily_disappear'] += 1
                                 # 25 frame ~ 1 seconds
@@ -250,14 +253,15 @@ class Tracker:
 
                                     list_vehicles.discard(ID)
 
-                    # Visualize deep-sort outputs
+                    # Cal info and Visualize deep-sort outputs
+                    # info
                     if len(outputs) > 0:
                         for j, (output, conf) in enumerate(zip(outputs, confs)):
+                            # base info
                             bboxes = output[0:4]
                             id = output[4]
                             cls = output[5]
                             c = int(cls)  # integer class
-                            # label = f'{id} {names[c]} {conf:.2f}'
                             label = f'{names[c]}- id {id}'
                             vehicle_infos[id]['type_vehicle'] = names[c]
 
@@ -266,21 +270,34 @@ class Tracker:
                             center = (bbox_left + bbox_right) // 2, (bbox_top + bbox_bottom) // 2
                             vehicle_infos[id]['route'][current_frame['time']] = center
 
-                            M, M_inverse = cal_perspective_params()
+                            # add new_route
                             Z = M[2, 0] * center[0] + M[2, 1] * center[1] + M[2, 2]
                             tempX = (M[0, 0] * center[0] + M[0, 1] * center[1] + M[0, 2]) // Z
                             tempY = (M[1, 0] * center[0] + M[1, 1] * center[1] + M[1, 2]) // Z
                             new_point = [int(tempX), int(tempY)]
                             vehicle_infos[id]['new_route'][current_frame['time']] = new_point
 
+                            # cal speed
+                            last = []
+                            for now in vehicle_infos[id]['new_route'].items():
+                                if not last == []:
+                                    now_time, now_point = now[0], now[1]
+                                    last_time, last_point = last[0], last[1]
+                                    del_time = now_time - last_time
+                                    del_x = now_point[0] - last_point[0]
+                                    del_y = now_point[1] - last_point[1]
+                                    dis = math.sqrt(del_x ** 2 + del_y ** 2)
+                                    speed = int((3.5 * dis / 160) / (del_time * 0.001) * 3.6)
+                                    vehicle_infos[id]['speed'][now_time] = speed
+                                last = now
+
                             # print route
                             if current_frame["frame"] > 2:
                                 for index, value in vehicle_infos.items():
                                     if current_frame['time'] < value['exit_time']:
                                         route = value["route"]
-                                        new_route = value["new_route"]
 
-                                        # draw
+                                        # draw route
                                         last = []
                                         for now in route.items():
                                             if not last == []:
@@ -291,23 +308,17 @@ class Tracker:
                                                          lineType=8)
                                             last = now
 
-                                        # speed
-                                        last = []
-                                        for now in new_route.items():
-                                            if not last == []:
-                                                now_time, now_point = now[0], now[1]
-                                                last_time, last_point = last[0], last[1]
-                                                # cal speed
-                                                del_time = now_time - last_time
-                                                del_x = now_point[0] - last_point[0]
-                                                del_y = now_point[1] - last_point[1]
-                                                dis = math.sqrt(del_x ** 2 + del_y ** 2)
-                                                speed = (3.5 * dis / 160) / (del_time * 0.001) * 3.6
-                                                if index == 1:
-                                                    print(now_time, speed)
-                                                speed = int(speed)
-                                                label = f'{names[c]}- id {id} {speed}km/h'
-                                            last = now
+                                        # draw speed
+                                        ns = 5
+                                        print(len(vehicle_infos[id]['speed']))
+                                        if len(vehicle_infos[id]['speed']) % ns == 0 and len(vehicle_infos[id]['speed']) != 0:
+                                            avr_speed = 0
+                                            for time, speed in vehicle_infos[id]['speed']:
+                                                avr_speed += speed
+                                            vehicle_infos[id]['speed'] = {}
+                                            avr_speed //= ns
+                                            vehicle_infos[id]['speed'] = {}
+                                            label = f'{names[c]}- id {id} {avr_speed}km/h'
 
                             # print box
                             annotator.box_label(bboxes, label, color=colors(c, True))
