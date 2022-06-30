@@ -313,12 +313,13 @@ class Tracker:
                                         print(len(vehicle_infos[id]['speed']))
                                         if len(vehicle_infos[id]['speed']) % ns == 0 and len(vehicle_infos[id]['speed']) != 0:
                                             avr_speed = 0
-                                            for time, speed in vehicle_infos[id]['speed']:
+                                            for id, speed in vehicle_infos[id]['speed'].items():
                                                 avr_speed += speed
                                             vehicle_infos[id]['speed'] = {}
                                             avr_speed //= ns
                                             vehicle_infos[id]['speed'] = {}
                                             label = f'{names[c]}- id {id} {avr_speed}km/h'
+                                            print(f'{names[c]}- id {id} {avr_speed}km/h')
 
                             # print box
                             annotator.box_label(bboxes, label, color=colors(c, True))
