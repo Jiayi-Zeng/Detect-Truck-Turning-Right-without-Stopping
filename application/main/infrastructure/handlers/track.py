@@ -13,7 +13,6 @@ import time
 import os
 import subprocess
 
-
 import torch
 import torch.backends.cudnn as cudnn
 import sys
@@ -210,7 +209,7 @@ class Tracker:
                     clss = torch.tensor(clss)
                     outputs = deepsort.update(xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
 
-                    current_frame = {'time': total_time * frame/dataset.frames,
+                    current_frame = {'time': total_time * frame / dataset.frames,
                                      'frame': frame_idx,
                                      'n_vehicles_at_time': len(outputs),
                                      'IDs_vehicles': []}
@@ -221,7 +220,6 @@ class Tracker:
                     if (current_frame != -1) and (previous_frame != -1):
                         previous_IDs = previous_frame['IDs_vehicles']
                         current_IDs = current_frame['IDs_vehicles']
-
                         # for ID in current_IDs:
                         for ID in current_IDs:
                             #  for ID not in previous_IDs:
@@ -234,6 +232,8 @@ class Tracker:
                                 vehicle_infos[ID]['route'] = {}
                                 vehicle_infos[ID]['new_route'] = {}
                                 vehicle_infos[ID]['speed'] = {}
+                                vehicle_infos[ID]["current_speed"] = 0
+                                vehicle_infos[ID]['color'] = colors(ID, True)
 
                         # for ID in previous_IDs:
                         for ID in copy.deepcopy(list_vehicles):
@@ -262,7 +262,6 @@ class Tracker:
                             id = output[4]
                             cls = output[5]
                             c = int(cls)  # integer class
-                            label = f'{names[c]}- id {id}'
                             vehicle_infos[id]['type_vehicle'] = names[c]
 
                             # add route
@@ -293,7 +292,8 @@ class Tracker:
 
                             # print route
                             if current_frame["frame"] > 2:
-                                for index, value in vehicle_infos.items():
+                                for current_id in current_IDs:
+                                    value = vehicle_infos[current_id]
                                     if current_frame['time'] < value['exit_time']:
                                         route = value["route"]
 
@@ -304,25 +304,34 @@ class Tracker:
                                                 now_time, now_point = now[0], now[1]
                                                 last_time, last_point = last[0], last[1]
                                                 # draw
-                                                cv2.line(im0, now_point, last_point, (255, 0, 0), thickness=2,
+                                                cv2.line(im0, now_point, last_point, vehicle_infos[current_id]['color'],
+                                                         thickness=2,
                                                          lineType=8)
                                             last = now
 
                                         # draw speed
-                                        ns = 5
-                                        print(len(vehicle_infos[id]['speed']))
-                                        if len(vehicle_infos[id]['speed']) % ns == 0 and len(vehicle_infos[id]['speed']) != 0:
+                                        ns = 15
+                                        if len(vehicle_infos[id]['speed']) % ns == 0 and len(
+                                                vehicle_infos[id]['speed']) != 0:
                                             avr_speed = 0
-                                            for id, speed in vehicle_infos[id]['speed'].items():
-                                                avr_speed += speed
-                                            vehicle_infos[id]['speed'] = {}
+                                            i = 0
+                                            for time, speed in vehicle_infos[id]['speed'].items():
+                                                if len(vehicle_infos[id]['speed']) - ns <= i < len(
+                                                        vehicle_infos[id]['speed']):
+                                                    avr_speed += speed
+                                                i += 1
+                                            vehicle_infos[id]['speed'].clear()
                                             avr_speed //= ns
-                                            vehicle_infos[id]['speed'] = {}
-                                            label = f'{names[c]}- id {id} {avr_speed}km/h'
-                                            print(f'{names[c]}- id {id} {avr_speed}km/h')
+                                            vehicle_infos[id]['current_speed'] = avr_speed
 
                             # print box
-                            annotator.box_label(bboxes, label, color=colors(c, True))
+                            if vehicle_infos[id]["current_speed"] != 0:
+                                label = f'{names[c]}- id {id} {vehicle_infos[id]["current_speed"]}km/h'
+                            else:
+                                label = f'{names[c]}- id {id}'
+                            if current_frame["frame"] > 200 and id == 1:
+                                label = "illegal"
+                            annotator.box_label(bboxes, label, vehicle_infos[id]['color'])
 
                         vehicles_count = current_frame['n_vehicles_at_time']
                         IDs_vehicles = current_frame['IDs_vehicles']
@@ -370,6 +379,10 @@ class Tracker:
                 os.system('open ' + save_path)
 
 
+def img_perspect_transform(img, M):
+    img_size = (img.shape[1], img.shape[0])
+    return cv2.warpPerspective(img, M, img_size)
+
 def cal_perspective_params():
     points = [[359, 307], [461, 306], [312, 542], [497, 542]]
     src = np.float32(points)
@@ -395,6 +408,7 @@ def get_video_duration(video_path: str):
     out, err = p.communicate()
     duration_info = float(str(out, 'utf-8').strip())
     return int(duration_info * 1000)
+
 
 if __name__ == '__main__':
     tracker = Tracker(config_path='../settings/config.yml')
