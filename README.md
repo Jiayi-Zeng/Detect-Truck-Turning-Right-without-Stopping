@@ -10,13 +10,6 @@ Python 3.7.12
 pip install -r requirements.txt
 ```
 
-    
-## Config
-
-`settings/`
-<br></br>
-`config.yml`  `deepsort.yml`  `db_config.yml`
-
 ## Running tracker
 
 ```
