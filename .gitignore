@@ -1,4 +1,5 @@
 # Folders
-videos/
-__pycache__/
+videos
+__pycache__
 doc
+.idea
